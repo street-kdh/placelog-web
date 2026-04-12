@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Place Log">
+  <meta name="theme-color" content="#5C6BC0">
+  <meta name="description" content="나만의 장소를 기록하세요">
+  <title>Place Log</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { font-family: 'Noto Sans KR', sans-serif; background: #FAFBFD; color: #2D3436; overflow: hidden; height: 100vh; height: 100dvh; }
+    .screen { display: none; flex-direction: column; height: 100vh; height: 100dvh; }
+    .screen.active { display: flex; }
+    
+    /* Splash */
+    .splash { background: linear-gradient(135deg, #5C6BC0 0%, #3949AB 100%); align-items: center; justify-content: center; }
+    .splash-title { font-family: 'Dancing Script', cursive; font-size: 52px; color: white; font-weight: 700; letter-spacing: 2px; }
+    .splash-sub { color: rgba(255,255,255,0.7); font-size: 16px; margin-top: 8px; opacity: 0; transition: opacity 0.8s; }
+    .splash-sub.show { opacity: 1; }
+    
+    /* Toolbar */
+    .toolbar { display: flex; align-items: center; padding: 0 8px; height: 56px; background: white; border-bottom: 1px solid #E8EAED; flex-shrink: 0; }
+    .toolbar-back { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: none; border: none; font-size: 20px; cursor: pointer; color: #2D3436; }
+    .toolbar-title { font-size: 18px; font-weight: 700; color: #2D3436; margin-left: 4px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .toolbar-action { background: none; border: none; font-size: 18px; cursor: pointer; padding: 8px; }
+    
+    /* Header */
+    .header-card { margin: 12px; padding: 12px; background: white; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .app-title { text-align: center; font-size: 13px; color: #636E72; letter-spacing: 2px; margin-bottom: 10px; }
+    .btn-row { display: flex; gap: 6px; }
+    .top-btn { flex: 1; padding: 12px 0; border-radius: 12px; border: 1.5px solid; font-size: 13px; font-weight: 700; background: white; cursor: pointer; letter-spacing: 1px; transition: all 0.2s; }
+    .top-btn:active { transform: scale(0.96); }
+    .btn-record { color: #7986CB; border-color: #7986CB; }
+    .btn-view { color: #4DB6AC; border-color: #4DB6AC; }
+    .btn-settings { color: #90A4AE; border-color: #90A4AE; }
+    
+    /* Map */
+    .map-card { flex: 1; margin: 0 12px 12px; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); position: relative; }
+    .map-loading { position: absolute; bottom: 16px; right: 16px; z-index: 999; display: none; align-items: center; background: rgba(0,0,0,0.8); padding: 8px 12px; border-radius: 8px; color: white; font-size: 12px; gap: 8px; }
+    .map-loading.show { display: flex; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width: 16px; height: 16px; border: 2px solid transparent; border-top: 2px solid white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    
+    /* Cards */
+    .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+    .card-label { display: block; font-size: 13px; color: #636E72; margin-bottom: 10px; }
+    .form-label { display: block; font-size: 14px; color: #636E72; margin-bottom: 8px; }
+    .form-input { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1.5px solid #E8EAED; font-size: 14px; color: #2D3436; outline: none; font-family: inherit; transition: border 0.2s; }
+    .form-input:focus { border-color: #7986CB; }
+    textarea.form-input { min-height: 100px; resize: vertical; }
+    .primary-btn { padding: 14px 0; border-radius: 10px; border: none; background: #7986CB; color: white; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; transition: opacity 0.2s; }
+    .primary-btn:active { opacity: 0.8; }
+    .primary-btn:disabled { background: #B2BEC3; }
+    .outline-btn { padding: 8px 16px; border-radius: 10px; border: 1.5px solid #E8EAED; background: white; color: #636E72; font-size: 13px; cursor: pointer; }
+    
+    /* Chips */
+    .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip { padding: 6px 14px; border-radius: 16px; border: 2px solid transparent; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+    .chip.selected { font-weight: 700; }
+    .chip-meal { background: #FFF3E0; color: #E65100; }
+    .chip-meal.selected { border-color: #E65100; }
+    .chip-cafe { background: #F3E5F5; color: #7B1FA2; }
+    .chip-cafe.selected { border-color: #7B1FA2; }
+    .chip-exp { background: #E3F2FD; color: #1565C0; }
+    .chip-exp.selected { border-color: #1565C0; }
+    .chip-etc { background: #ECEFF1; color: #546E7A; }
+    .chip-etc.selected { border-color: #546E7A; }
+    
+    /* Stars */
+    .stars { display: flex; justify-content: center; gap: 2px; margin-bottom: 8px; }
+    .star { font-size: 24px; cursor: pointer; transition: color 0.15s; user-select: none; }
+    .star.filled { color: #FFD54F; }
+    .star.empty { color: #E8EAED; }
+    
+    /* Photos */
+    .photo-grid { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+    .photo-thumb { position: relative; flex-shrink: 0; }
+    .photo-thumb img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; }
+    .photo-remove { position: absolute; top: -4px; right: -4px; width: 20px; height: 20px; border-radius: 50%; background: #333; color: white; border: none; font-size: 10px; cursor: pointer; line-height: 20px; text-align: center; }
+    
+    /* FAB */
+    .fab { position: fixed; bottom: 20px; right: 20px; width: 56px; height: 56px; border-radius: 50%; background: #7986CB; color: white; border: none; font-size: 22px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.25); z-index: 1000; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .fab:active { transform: scale(0.9); }
+    .fab:disabled { background: #B2BEC3; }
+    
+    /* Record card */
+    .record-card { background: white; border-radius: 14px; padding: 16px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); cursor: pointer; transition: box-shadow 0.2s; }
+    .record-card:active { box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    .tag { color: white; padding: 2px 10px; border-radius: 10px; font-size: 11px; display: inline-block; }
+    
+    /* Profile */
+    .profile-circle { border-radius: 50%; background: #E8EAED; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .profile-circle img { width: 100%; height: 100%; object-fit: cover; }
+    .profile-placeholder { color: #B2BEC3; }
+    
+    /* Filter bar */
+    .filter-bar { display: flex; gap: 8px; padding: 8px 16px; overflow-x: auto; background: white; border-bottom: 1px solid #E8EAED; flex-shrink: 0; }
+    .filter-chip { padding: 5px 14px; border-radius: 16px; border: none; font-size: 13px; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all 0.2s; }
+    .filter-chip.active { font-weight: 700; }
+    
+    /* Ranking */
+    .rank-tab-bar { display: flex; border-bottom: 1px solid #E8EAED; flex-shrink: 0; }
+    .rank-tab { flex: 1; padding: 12px 0; background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; cursor: pointer; transition: all 0.2s; color: #B2BEC3; }
+    .rank-tab.active { border-bottom-color: #7986CB; color: #7986CB; font-weight: 700; }
+    .rank-item { display: flex; align-items: center; gap: 12px; padding: 14px; margin-bottom: 8px; border-radius: 14px; transition: all 0.2s; }
+    .rank-item.top { background: linear-gradient(135deg, #FAFBFD 0%, #FFF8E1 100%); box-shadow: 0 2px 12px rgba(255,193,7,0.15); }
+    .rank-item.first { border: 2px solid #FFD54F; }
+    .rank-item.normal { background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #E8EAED; }
+    
+    /* Scroll */
+    .scroll-content { overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+    
+    /* Sort */
+    .sort-select { margin-left: auto; padding: 4px 8px; border-radius: 8px; border: 1px solid #E8EAED; font-size: 12px; background: white; }
+    
+    /* Image gallery in detail */
+    .detail-image { width: 100%; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    
+    /* Safe area padding */
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  </style>
+</head>
+<body>
+
+<!-- ═══ SPLASH ═══ -->
+<div id="splashScreen" class="screen splash active">
+  <div class="splash-title" id="splashText"></div>
+  <div class="splash-sub" id="splashSub">나만의 장소를 기록하세요</div>
+</div>
+
+<!-- ═══ MAIN (MAP) ═══ -->
+<div id="mainScreen" class="screen">
+  <div class="header-card">
+    <div class="app-title">Place Log</div>
+    <div class="btn-row">
+      <button class="top-btn btn-record" onclick="showScreen('record')">기록</button>
+      <button class="top-btn btn-view" onclick="showScreen('view')">보기</button>
+      <button class="top-btn btn-view" onclick="showScreen('ranking')">랭킹</button>
+      <button class="top-btn btn-settings" onclick="showScreen('settings')">설정</button>
+    </div>
+  </div>
+  <div class="map-card">
+    <div id="mainMap" style="width:100%;height:100%;"></div>
+    <div id="mapLoading" class="map-loading">
+      <div class="spinner"></div>
+      <span>기록 불러오는 중...</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SETTINGS ═══ -->
+<div id="settingsScreen" class="screen">
+  <div class="toolbar">
+    <button class="toolbar-back" id="settingsBack" onclick="showScreen('main')">←</button>
+    <span class="toolbar-title" id="settingsTitle">설정</span>
+  </div>
+  <div class="scroll-content" style="padding:20px;">
+    <label class="form-label">프로필 사진</label>
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px;">
+      <div class="profile-circle" id="settingsProfile" style="width:72px;height:72px;">
+        <span class="profile-placeholder" style="font-size:28px;">👤</span>
+      </div>
+      <label class="outline-btn" style="cursor:pointer;" id="photoLabel">
+        사진 변경
+        <input type="file" accept="image/*" id="profileInput" style="display:none;" onchange="handleProfilePhoto(this)">
+      </label>
+    </div>
+    <label class="form-label">닉네임</label>
+    <input class="form-input" id="nickInput" placeholder="닉네임을 입력하세요" maxlength="20" style="margin-bottom:20px;">
+    <label class="form-label">PIN (숫자 6자리)</label>
+    <p style="font-size:12px;color:#B2BEC3;margin:0 0 8px;">PIN은 기록 삭제 시 본인 확인에 사용돼요.</p>
+    <input class="form-input" id="pinInput" placeholder="숫자 6자리 PIN" type="password" maxlength="6" style="margin-bottom:28px;"
+      oninput="this.value=this.value.replace(/\D/g,'')">
+    <button class="primary-btn" onclick="saveSettings()">저장</button>
+  </div>
+</div>
+
+<!-- ═══ RECORD ═══ -->
+<div id="recordScreen" class="screen">
+  <div class="toolbar">
+    <button class="toolbar-back" onclick="showScreen('main')">←</button>
+    <span class="toolbar-title">기록 작성</span>
+  </div>
+  <div class="scroll-content" style="padding:16px;padding-bottom:100px;">
+    <div class="card">
+      <div style="font-size:13px;color:#636E72;margin-bottom:4px;">📍 선택된 위치</div>
+      <div style="font-size:12px;color:#7986CB;" id="recordAddress">위치 확인 중...</div>
+    </div>
+    <div class="card">
+      <label class="card-label">장소 유형</label>
+      <div class="chip-row" id="typeChips"></div>
+    </div>
+    <div class="card">
+      <label class="card-label">장소 이름</label>
+      <input class="form-input" id="placeNameInput" placeholder="장소 이름을 입력하세요">
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <label class="card-label" style="margin-bottom:0;">만족도</label>
+        <span style="color:#7986CB;font-weight:700;font-size:13px;" id="satValue">0 / 10</span>
+      </div>
+      <div class="stars" id="starsContainer"></div>
+      <input type="range" min="0" max="10" value="0" id="satSlider" style="width:100%;accent-color:#7986CB;"
+        oninput="setSatisfaction(+this.value)">
+    </div>
+    <div class="card">
+      <label class="card-label">본문</label>
+      <textarea class="form-input" id="contentInput" placeholder="자유롭게 기록을 남겨보세요"></textarea>
+    </div>
+    <div class="card">
+      <label class="card-label">사진 첨부</label>
+      <label class="outline-btn" style="cursor:pointer;display:inline-block;margin-bottom:12px;">
+        📷 사진 선택
+        <input type="file" accept="image/*" multiple style="display:none;" onchange="handleRecordPhotos(this)">
+      </label>
+      <div class="photo-grid" id="photoGrid"></div>
+    </div>
+  </div>
+  <button class="fab" id="saveFab" onclick="saveRecord()">💾</button>
+</div>
+
+<!-- ═══ VIEW ═══ -->
+<div id="viewScreen" class="screen">
+  <div class="toolbar">
+    <button class="toolbar-back" onclick="showScreen('main')">←</button>
+    <span class="toolbar-title">기록 보기</span>
+    <select class="sort-select" id="sortSelect" onchange="renderViewList()">
+      <option value="latest">최신순</option>
+      <option value="oldest">오래된순</option>
+      <option value="satisfaction">만족도순</option>
+    </select>
+  </div>
+  <div class="filter-bar" id="filterBar"></div>
+  <div class="scroll-content" id="viewList" style="padding:12px;"></div>
+</div>
+
+<!-- ═══ DETAIL ═══ -->
+<div id="detailScreen" class="screen">
+  <div class="toolbar">
+    <button class="toolbar-back" onclick="showScreen('view')">←</button>
+    <span class="toolbar-title" id="detailTitle">기록 상세</span>
+    <button class="toolbar-action" onclick="handleDelete()">🗑️</button>
+  </div>
+  <div class="scroll-content" id="detailContent" style="padding:16px;"></div>
+</div>
+
+<!-- ═══ RANKING ═══ -->
+<div id="rankingScreen" class="screen">
+  <div class="toolbar">
+    <button class="toolbar-back" onclick="showScreen('main')">←</button>
+    <span class="toolbar-title">랭킹 보드</span>
+  </div>
+  <div class="rank-tab-bar">
+    <button class="rank-tab active" id="tabTotal" onclick="switchRankTab('total')">🏆 총 랭킹</button>
+    <button class="rank-tab" id="tabWeekly" onclick="switchRankTab('weekly')">📅 주간 랭킹</button>
+  </div>
+  <div class="scroll-content" id="rankList" style="padding:16px;"></div>
+</div>
+
+<script>
+// ─── Config ─────────────────────────────
+const NOTION_TOKEN = "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";
+const NOTION_DB_ID = "33bacb73c7e780ad80b8ca7d9e0c542a";
+const NOTION_VER = "2022-06-28";
+const IMGUR_CID = "546c25a59c58ad7";
+const PROXY = "https://corsproxy.io/?";
+const DEFAULT_POS = [37.5665, 126.978];
+const TYPES = ["식사","카페&디저트","체험&관람","기타"];
+const TYPE_META = {
+  "식사":      {bg:"#FFF3E0",text:"#E65100",tag:"#FF8A65",cls:"chip-meal",icon:"🍽"},
+  "카페&디저트":{bg:"#F3E5F5",text:"#7B1FA2",tag:"#CE93D8",cls:"chip-cafe",icon:"☕"},
+  "체험&관람":  {bg:"#E3F2FD",text:"#1565C0",tag:"#64B5F6",cls:"chip-exp",icon:"🎭"},
+  "기타":      {bg:"#ECEFF1",text:"#546E7A",tag:"#90A4AE",cls:"chip-etc",icon:"📌"}
+};
+
+// ─── State ──────────────────────────────
+let records = [];
+let userPos = DEFAULT_POS;
+let mainMap = null;
+let markers = [];
+let currentFilter = "전체";
+let selectedType = "";
+let satisfaction = 0;
+let recordPhotos = [];
+let detailRecord = null;
+let rankTab = "total";
+
+// ─── LocalStorage ───────────────────────
+const get = (k,d="") => { try{return localStorage.getItem("pl_"+k)||d}catch{return d} };
+const set = (k,v) => { try{localStorage.setItem("pl_"+k,v)}catch{} };
+
+// ─── Notion API ─────────────────────────
+async function notionFetch(path,method="GET",body=null) {
+  const opts = {method, headers:{"Authorization":`Bearer ${NOTION_TOKEN}`,"Notion-Version":NOTION_VER,"Content-Type":"application/json"}};
+  if(body) opts.body = JSON.stringify(body);
+  const r = await fetch(`${PROXY}https://api.notion.com/${path}`,opts);
+  if(!r.ok) throw new Error(`Notion ${r.status}`);
+  return r.json();
+}
+
+async function loadRecords() {
+  showLoading(true);
+  try {
+    const data = await notionFetch(`v1/databases/${NOTION_DB_ID}/query`,"POST",{
+      sorts:[{timestamp:"created_time",direction:"descending"}]
+    });
+    records = await Promise.all(data.results.map(async page => {
+      const p = page.properties;
+      let imageUrls = [];
+      try {
+        const blocks = await notionFetch(`v1/blocks/${page.id}/children`);
+        imageUrls = blocks.results.filter(b=>b.type==="image").map(b=>b.image?.external?.url||b.image?.file?.url||"").filter(Boolean);
+      } catch{}
+      return {
+        id:page.id,
+        nickname:p["작성자"]?.rich_text?.[0]?.plain_text||"",
+        pin:p["PIN"]?.rich_text?.[0]?.plain_text||"",
+        createdAt:page.created_time||"",
+        placeType:p["장소유형"]?.rich_text?.[0]?.plain_text||"기타",
+        placeName:p["이름"]?.title?.[0]?.plain_text||"",
+        satisfaction:p["만족도"]?.number||0,
+        address:p["주소"]?.rich_text?.[0]?.plain_text||"",
+        content:p["본문"]?.rich_text?.[0]?.plain_text||"",
+        latitude:p["위도"]?.number||0,
+        longitude:p["경도"]?.number||0,
+        profileImageUrl:p["프로필사진"]?.rich_text?.[0]?.plain_text||"",
+        imageUrls
+      };
+    }));
+    updateMapMarkers();
+  } catch(e) { console.error("Load failed:",e); }
+  showLoading(false);
+}
+
+async function createNotionRecord(rec) {
+  const props = {
+    "이름":{title:[{text:{content:`[${rec.placeType}] ${rec.placeName} : ${"★".repeat(rec.satisfaction)}`}}]},
+    "작성자":{rich_text:[{text:{content:rec.nickname}}]},
+    "PIN":{rich_text:[{text:{content:rec.pin}}]},
+    "주소":{rich_text:[{text:{content:rec.address}}]},
+    "장소유형":{rich_text:[{text:{content:rec.placeType}}]},
+    "만족도":{number:rec.satisfaction},
+    "위도":{number:rec.latitude},
+    "경도":{number:rec.longitude},
+    "본문":{rich_text:[{text:{content:rec.content}}]},
+    "프로필사진":{rich_text:[{text:{content:rec.profileImageUrl||""}}]}
+  };
+  const children = [];
+  children.push({object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:`[${rec.nickname} - ${rec.createdAt}]`},annotations:{bold:true,color:"gray"}}]}});
+  if(rec.content) children.push({object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:rec.content}}]}});
+  (rec.imageUrls||[]).forEach(url=>{children.push({object:"block",type:"image",image:{type:"external",external:{url}}});});
+  return notionFetch("v1/pages","POST",{parent:{database_id:NOTION_DB_ID},properties:props,children});
+}
+
+async function archiveRecord(id) {
+  return notionFetch(`v1/pages/${id}`,"PATCH",{archived:true});
+}
+
+// ─── Imgur ───────────────────────────────
+async function uploadImgur(file) {
+  const fd = new FormData(); fd.append("image",file);
+  const r = await fetch("https://api.imgur.com/3/image",{method:"POST",headers:{Authorization:`Client-ID ${IMGUR_CID}`},body:fd});
+  const d = await r.json();
+  if(d.success) return d.data.link;
+  throw new Error("Upload failed");
+}
+
+// ─── Ranking ────────────────────────────
+function getRanking(recs, days=null) {
+  let filtered = recs;
+  if(days) { const c=Date.now()-days*86400000; filtered=recs.filter(r=>new Date(r.createdAt).getTime()>c); }
+  const m={};
+  filtered.forEach(r=>{
+    if(!m[r.nickname]) m[r.nickname]={nickname:r.nickname,count:0,profileImageUrl:""};
+    m[r.nickname].count++;
+    if(r.profileImageUrl) m[r.nickname].profileImageUrl=r.profileImageUrl;
+  });
+  return Object.values(m).sort((a,b)=>b.count-a.count).map((e,i)=>({...e,rank:i+1}));
+}
+function getBadge(rank) { return rank===1?"👑":rank===2?"🥈":rank===3?"🥉":""; }
+function getUserRank(nickname) {
+  const r = getRanking(records);
+  const e = r.find(x=>x.nickname===nickname);
+  return e?e.rank:0;
+}
+
+// ─── Splash ─────────────────────────────
+function runSplash() {
+  const full = "Place Log";
+  let i=0;
+  const el = document.getElementById("splashText");
+  const iv = setInterval(()=>{
+    i++; el.textContent = full.substring(0,i)+(i<full.length?"|":"");
+    if(i>=full.length) { clearInterval(iv); setTimeout(()=>document.getElementById("splashSub").classList.add("show"),200); }
+  },120);
+  setTimeout(()=>{
+    if(!get("nickname")||!get("pin")) showScreen("settings",true);
+    else showScreen("main");
+  },2800);
+}
+
+// ─── Screen Navigation ──────────────────
+function showScreen(name, isFirstSetup=false) {
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(name+"Screen").classList.add("active");
+
+  if(name==="main") {
+    if(!mainMap) initMainMap();
+    else mainMap.invalidateSize();
+    loadRecords();
+  }
+  if(name==="settings") {
+    document.getElementById("settingsBack").style.display = isFirstSetup?"none":"flex";
+    document.getElementById("settingsTitle").textContent = isFirstSetup?"초기 설정":"설정";
+    document.getElementById("nickInput").value = get("nickname");
+    document.getElementById("pinInput").value = get("pin");
+    updateSettingsProfile();
+  }
+  if(name==="record") initRecordScreen();
+  if(name==="view") { renderFilterBar(); renderViewList(); }
+  if(name==="ranking") { rankTab="total"; renderRanking(); }
+}
+
+function showLoading(show) {
+  const el = document.getElementById("mapLoading");
+  if(el) el.classList.toggle("show",show);
+}
+
+// ─── Main Map ───────────────────────────
+function initMainMap() {
+  mainMap = L.map("mainMap").setView(userPos,17);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'© OpenStreetMap'}).addTo(mainMap);
+  // User location marker
+  L.circleMarker(userPos,{radius:8,fillColor:"#5C6BC0",fillOpacity:0.8,color:"white",weight:3}).addTo(mainMap);
+}
+
+function updateMapMarkers() {
+  if(!mainMap) return;
+  markers.forEach(m=>m.remove()); markers=[];
+  const ranking = getRanking(records);
+  records.forEach(r=>{
+    if(!r.latitude||!r.longitude) return;
+    const meta = TYPE_META[r.placeType]||TYPE_META["기타"];
+    const rank = ranking.find(x=>x.nickname===r.nickname)?.rank||0;
+    const badge = getBadge(rank);
+    const icon = L.divIcon({
+      className:"",
+      html:`<div style="background:${meta.tag};width:30px;height:30px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:14px;">${meta.icon}</div>`,
+      iconSize:[30,30],iconAnchor:[15,15]
+    });
+    const m = L.marker([r.latitude,r.longitude],{icon}).addTo(mainMap);
+    m.bindPopup(`<div style="min-width:180px"><strong>${badge} ${r.placeName}</strong><br><span style="background:${meta.tag};color:white;padding:1px 6px;border-radius:8px;font-size:11px;">${r.placeType}</span> <span style="color:#FFD54F">${"★".repeat(r.satisfaction)}</span><br><small style="color:#636E72">${r.address}</small><br><small style="color:#999">by ${r.nickname}</small></div>`);
+    markers.push(m);
+  });
+}
+
+// ─── Settings ───────────────────────────
+function updateSettingsProfile() {
+  const url = get("profileUrl");
+  const el = document.getElementById("settingsProfile");
+  if(url) el.innerHTML=`<img src="${url}">`;
+  else el.innerHTML=`<span class="profile-placeholder" style="font-size:28px">👤</span>`;
+}
+
+async function handleProfilePhoto(input) {
+  const file = input.files?.[0]; if(!file) return;
+  document.getElementById("photoLabel").textContent="업로드 중...";
+  try {
+    const url = await uploadImgur(file);
+    set("profileUrl",url);
+    updateSettingsProfile();
+  } catch { alert("사진 업로드 실패"); }
+  document.getElementById("photoLabel").textContent="사진 변경";
+}
+
+function saveSettings() {
+  const nick = document.getElementById("nickInput").value.trim();
+  const pin = document.getElementById("pinInput").value.trim();
+  if(!nick) return alert("닉네임을 입력해주세요");
+  if(pin.length!==6||!/^\d+$/.test(pin)) return alert("PIN은 숫자 6자리로 입력해주세요");
+  set("nickname",nick); set("pin",pin);
+  alert("저장되었습니다");
+  showScreen("main");
+}
+
+// ─── Record ─────────────────────────────
+function initRecordScreen() {
+  selectedType=""; satisfaction=0; recordPhotos=[];
+  document.getElementById("placeNameInput").value="";
+  document.getElementById("contentInput").value="";
+  document.getElementById("photoGrid").innerHTML="";
+  document.getElementById("recordAddress").textContent=`${userPos[0].toFixed(4)}, ${userPos[1].toFixed(4)}`;
+  renderTypeChips(); renderStars(); document.getElementById("satSlider").value=0; document.getElementById("satValue").textContent="0 / 10";
+  // Reverse geocode
+  fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userPos[0]}&lon=${userPos[1]}&accept-language=ko`)
+    .then(r=>r.json()).then(d=>{if(d.display_name)document.getElementById("recordAddress").textContent=d.display_name;}).catch(()=>{});
+}
+
+function renderTypeChips() {
+  const el = document.getElementById("typeChips"); el.innerHTML="";
+  TYPES.forEach(t=>{
+    const meta = TYPE_META[t];
+    const btn = document.createElement("button");
+    btn.className=`chip ${meta.cls}${selectedType===t?" selected":""}`;
+    btn.textContent=(selectedType===t?"✓ ":"")+t;
+    btn.onclick=()=>{selectedType=selectedType===t?"":t;renderTypeChips();};
+    el.appendChild(btn);
+  });
+}
+
+function setSatisfaction(v) {
+  satisfaction=v;
+  document.getElementById("satValue").textContent=`${v} / 10`;
+  document.getElementById("satSlider").value=v;
+  renderStars();
+}
+
+function renderStars() {
+  const el=document.getElementById("starsContainer"); el.innerHTML="";
+  for(let i=1;i<=10;i++){
+    const s=document.createElement("span");
+    s.className=`star ${i<=satisfaction?"filled":"empty"}`;
+    s.textContent="★";
+    s.onclick=()=>setSatisfaction(i);
+    el.appendChild(s);
+  }
+}
+
+function handleRecordPhotos(input) {
+  const files = Array.from(input.files||[]);
+  recordPhotos.push(...files);
+  renderPhotoGrid();
+}
+
+function renderPhotoGrid() {
+  const el=document.getElementById("photoGrid"); el.innerHTML="";
+  recordPhotos.forEach((f,i)=>{
+    const div=document.createElement("div"); div.className="photo-thumb";
+    const img=document.createElement("img"); img.src=URL.createObjectURL(f);
+    const btn=document.createElement("button"); btn.className="photo-remove"; btn.textContent="✕";
+    btn.onclick=()=>{recordPhotos.splice(i,1);renderPhotoGrid();};
+    div.appendChild(img); div.appendChild(btn); el.appendChild(div);
+  });
+}
+
+async function saveRecord() {
+  const placeName=document.getElementById("placeNameInput").value.trim();
+  if(!placeName) return alert("장소 이름을 입력해주세요");
+  const fab=document.getElementById("saveFab"); fab.disabled=true; fab.textContent="⏳";
+  try {
+    const imageUrls=[];
+    for(const f of recordPhotos) { imageUrls.push(await uploadImgur(f)); }
+    const now=new Date();
+    const pad=n=>String(n).padStart(2,"0");
+    const createdAt=`${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    await createNotionRecord({
+      nickname:get("nickname"), pin:get("pin"), createdAt,
+      placeType:selectedType||"기타", placeName, satisfaction,
+      address:document.getElementById("recordAddress").textContent,
+      content:document.getElementById("contentInput").value,
+      latitude:userPos[0], longitude:userPos[1],
+      imageUrls, profileImageUrl:get("profileUrl")
+    });
+    alert("저장되었습니다!"); showScreen("main");
+  } catch(e) { alert("저장 실패: "+e.message); }
+  fab.disabled=false; fab.textContent="💾";
+}
+
+// ─── View ───────────────────────────────
+function renderFilterBar() {
+  const el=document.getElementById("filterBar"); el.innerHTML="";
+  ["전체",...TYPES].forEach(t=>{
+    const btn=document.createElement("button");
+    const isAll=t==="전체";
+    const active=currentFilter===t;
+    btn.className=`filter-chip${active?" active":""}`;
+    const meta=TYPE_META[t];
+    btn.style.background=active?(isAll?"#7986CB":(meta?.bg||"#F5F5F5")):"#F5F5F5";
+    btn.style.color=active?(isAll?"white":(meta?.text||"#636E72")):"#636E72";
+    btn.textContent=t;
+    btn.onclick=()=>{currentFilter=t;renderFilterBar();renderViewList();};
+    el.appendChild(btn);
+  });
+}
+
+function renderViewList() {
+  const sort=document.getElementById("sortSelect").value;
+  let list=currentFilter==="전체"?[...records]:records.filter(r=>r.placeType===currentFilter);
+  if(sort==="latest") list.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  else if(sort==="oldest") list.sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
+  else if(sort==="satisfaction") list.sort((a,b)=>b.satisfaction-a.satisfaction);
+  
+  const el=document.getElementById("viewList");
+  if(!list.length) { el.innerHTML=`<div style="text-align:center;margin-top:60px;color:#B2BEC3"><div style="font-size:18px">아직 기록이 없어요</div><div style="font-size:13px;margin-top:8px">기록 버튼을 눌러 첫 기록을 남겨보세요!</div></div>`; return; }
+  
+  const ranking=getRanking(records);
+  el.innerHTML=list.map(r=>{
+    const meta=TYPE_META[r.placeType]||TYPE_META["기타"];
+    const rank=ranking.find(x=>x.nickname===r.nickname)?.rank||0;
+    const badge=getBadge(rank);
+    return `<div class="record-card" onclick='showDetail("${r.id}")'>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span class="tag" style="background:${meta.tag}">${r.placeType}</span>
+        <span style="color:#FFD54F;font-size:13px">${"★".repeat(r.satisfaction)}</span>
+        <span style="margin-left:auto;font-size:11px;color:#B2BEC3">${r.createdAt.substring(0,10)}</span>
+      </div>
+      <div style="font-size:16px;font-weight:700;color:#2D3436;margin-bottom:4px">${r.placeName}</div>
+      <div style="font-size:12px;color:#636E72;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.address}</div>
+      ${r.content?`<div style="font-size:13px;color:#636E72;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${r.content}</div>`:""}
+      ${r.imageUrls?.[0]?`<img src="${r.imageUrls[0]}" style="width:100%;height:140px;object-fit:cover;border-radius:10px;margin-bottom:8px">`:""}
+      <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+        <div class="profile-circle" style="width:24px;height:24px">${r.profileImageUrl?`<img src="${r.profileImageUrl}">`:`<span class="profile-placeholder" style="font-size:12px">👤</span>`}</div>
+        <span style="font-size:12px;color:#636E72">${r.nickname}</span>
+        ${badge?`<span style="font-size:14px">${badge}</span>`:""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ─── Detail ─────────────────────────────
+function showDetail(id) {
+  detailRecord = records.find(r=>r.id===id);
+  if(!detailRecord) return;
+  showScreen("detail");
+  document.getElementById("detailTitle").textContent=detailRecord.placeName;
+  const r=detailRecord;
+  const meta=TYPE_META[r.placeType]||TYPE_META["기타"];
+  const rank=getUserRank(r.nickname);
+  const badge=getBadge(rank);
+  
+  document.getElementById("detailContent").innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <span class="tag" style="background:${meta.tag}">${r.placeType}</span>
+      <span style="color:#FFD54F;font-size:16px">${"★".repeat(r.satisfaction)}</span>
+      <span style="margin-left:auto;font-size:12px;color:#B2BEC3">${r.createdAt.substring(0,10)}</span>
+    </div>
+    <h2 style="font-size:24px;font-weight:700;color:#2D3436;margin:0 0 8px">${r.placeName}</h2>
+    <div style="font-size:13px;color:#636E72;margin-bottom:16px">📍 ${r.address}</div>
+    <div style="height:1px;background:#E8EAED;margin-bottom:16px"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div class="profile-circle" style="width:36px;height:36px">${r.profileImageUrl?`<img src="${r.profileImageUrl}">`:`<span class="profile-placeholder" style="font-size:18px">👤</span>`}</div>
+      <span style="font-size:14px;color:#636E72">${r.nickname}</span>
+      ${badge?`<span style="font-size:16px">${badge}</span>`:""}
+      <span style="font-size:11px;color:#B2BEC3">작성자</span>
+    </div>
+    <div style="font-size:15px;color:#2D3436;line-height:1.7;margin-bottom:16px;white-space:pre-wrap">${r.content||"본문 없음"}</div>
+    ${(r.imageUrls||[]).map(url=>`<img class="detail-image" src="${url}">`).join("")}
+  `;
+}
+
+async function handleDelete() {
+  if(!detailRecord) return;
+  if(detailRecord.nickname!==get("nickname")||detailRecord.pin!==get("pin"))
+    return alert("본인의 기록만 삭제할 수 있습니다.");
+  if(!confirm("이 기록을 삭제할까요?\n삭제된 기록은 복구할 수 없어요.")) return;
+  try {
+    await archiveRecord(detailRecord.id);
+    alert("삭제되었습니다");
+    await loadRecords();
+    showScreen("view");
+  } catch(e) { alert("삭제 실패: "+e.message); }
+}
+
+// ─── Ranking ────────────────────────────
+function switchRankTab(tab) {
+  rankTab=tab;
+  document.getElementById("tabTotal").classList.toggle("active",tab==="total");
+  document.getElementById("tabWeekly").classList.toggle("active",tab==="weekly");
+  renderRanking();
+}
+
+function renderRanking() {
+  const list = rankTab==="total"?getRanking(records):getRanking(records,7);
+  const el=document.getElementById("rankList");
+  if(!list.length) { el.innerHTML=`<div style="text-align:center;margin-top:60px;color:#B2BEC3">${rankTab==="weekly"?"이번 주 기록이 없습니다":"아직 기록이 없습니다"}</div>`; return; }
+  el.innerHTML=list.slice(0,10).map(e=>{
+    const badge=getBadge(e.rank);
+    const isTop=e.rank<=3;
+    return `<div class="rank-item ${isTop?"top":"normal"} ${e.rank===1?"first":""}">
+      <div style="width:36px;text-align:center;font-size:${isTop?22:16}px;font-weight:700;color:${isTop?"#FFD54F":"#B2BEC3"}">${badge||e.rank}</div>
+      <div class="profile-circle" style="width:40px;height:40px">${e.profileImageUrl?`<img src="${e.profileImageUrl}">`:`<span class="profile-placeholder" style="font-size:18px">👤</span>`}</div>
+      <div style="flex:1"><div style="font-weight:600;font-size:15px;color:#2D3436">${e.nickname}</div><div style="font-size:12px;color:#636E72">${e.count}개 기록</div></div>
+    </div>`;
+  }).join("");
+}
+
+// ─── Init ───────────────────────────────
+function init() {
+  // Get location first
+  if(navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos=>{ userPos=[pos.coords.latitude,pos.coords.longitude]; },
+      ()=>{}, {enableHighAccuracy:true,timeout:5000}
+    );
+  }
+  runSplash();
+}
+
+init();
+
+// Register Service Worker for PWA
+if('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
