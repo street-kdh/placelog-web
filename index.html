@@ -28,15 +28,64 @@
 <div id="viewScreen" class="screen"><div class="toolbar"><button class="toolbar-back" onclick="showScreen('main')">←</button><span class="toolbar-title">기록 보기</span><select class="sort-select" id="sortSelect" onchange="renderViewList()"><option value="latest">최신순</option><option value="oldest">오래된순</option><option value="satisfaction">만족도순</option></select></div><div class="filter-bar" id="filterBar"></div><div class="scroll-content" id="viewList" style="padding:12px;"></div></div>
 <div id="detailScreen" class="screen"><div class="toolbar"><button class="toolbar-back" onclick="showScreen('view')">←</button><span class="toolbar-title" id="detailTitle">기록 상세</span><button class="toolbar-action" onclick="handleEdit()">✏️</button><button class="toolbar-action" onclick="handleDelete()">🗑️</button></div><div class="scroll-content" id="detailContent" style="padding:16px;"></div></div>
 <div id="rankingScreen" class="screen"><div class="toolbar"><button class="toolbar-back" onclick="showScreen('main')">←</button><span class="toolbar-title">랭킹 보드</span></div><div class="rank-tab-bar"><button class="rank-tab active" id="tabTotal" onclick="switchRankTab('total')">🏆 총 랭킹</button><button class="rank-tab" id="tabWeekly" onclick="switchRankTab('weekly')">📅 주간 랭킹</button></div><div class="scroll-content" id="rankList" style="padding:16px;"></div></div>
-<div class="modal-overlay" id="editModal"><div class="modal-box"><div class="modal-title">기록 수정</div><label class="form-label">장소 이름</label><input class="form-input" id="editPlaceName" style="margin-bottom:16px;"><label class="form-label">본문</label><textarea class="form-input" id="editContent" style="min-height:120px;"></textarea><div class="modal-btns"><button class="modal-btn-cancel" onclick="closeEditModal()">취소</button><button class="modal-btn-save" id="editSaveBtn" onclick="saveEdit()">저장</button></div></div></div>
+<!-- ===== 수정 모달 (개선 3: 장소유형, 만족도, 이미지 추가/삭제 지원) ===== -->
+<div class="modal-overlay" id="editModal"><div class="modal-box">
+  <div class="modal-title">기록 수정</div>
+  <label class="form-label">장소 유형</label>
+  <div class="chip-row" id="editTypeChips" style="margin-bottom:16px;"></div>
+  <label class="form-label">장소 이름</label>
+  <input class="form-input" id="editPlaceName" style="margin-bottom:16px;">
+  <label class="form-label">만족도</label>
+  <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+    <div class="stars" id="editStarsContainer" style="margin-bottom:0;"></div>
+    <span style="color:#7986CB;font-weight:700;font-size:13px;" id="editSatValue">0 / 10</span>
+  </div>
+  <input type="range" min="0" max="10" value="0" id="editSatSlider" style="width:100%;accent-color:#7986CB;margin-bottom:16px;" oninput="setEditSatisfaction(+this.value)">
+  <label class="form-label">본문</label>
+  <textarea class="form-input" id="editContent" style="min-height:120px;margin-bottom:16px;"></textarea>
+  <label class="form-label">기존 이미지</label>
+  <div class="photo-grid" id="editExistingPhotos" style="margin-bottom:12px;"></div>
+  <label class="form-label">새 이미지 추가</label>
+  <label class="outline-btn" style="cursor:pointer;display:inline-block;margin-bottom:12px;">📷 사진 선택<input type="file" accept="image/*" multiple style="display:none;" onchange="handleEditNewPhotos(this)"></label>
+  <div class="photo-grid" id="editNewPhotos"></div>
+  <div class="modal-btns"><button class="modal-btn-cancel" onclick="closeEditModal()">취소</button><button class="modal-btn-save" id="editSaveBtn" onclick="saveEdit()">저장</button></div>
+</div></div>
 <script>
 const NOTION_TOKEN="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",NOTION_DB_ID="33bacb73c7e780ad80b8ca7d9e0c542a",NOTION_VER="2022-06-28",IMGUR_CID="546c25a59c58ad7",PROXY="https://corsproxy.io/?",DEFAULT_POS=[37.5665,126.978],TYPES=["식사","카페&디저트","체험&관람","기타"];
 const TYPE_META={"식사":{bg:"#FFF3E0",text:"#E65100",tag:"#FF8A65",cls:"chip-meal",icon:"🍽"},"카페&디저트":{bg:"#F3E5F5",text:"#7B1FA2",tag:"#CE93D8",cls:"chip-cafe",icon:"☕"},"체험&관람":{bg:"#E3F2FD",text:"#1565C0",tag:"#64B5F6",cls:"chip-exp",icon:"🎭"},"기타":{bg:"#ECEFF1",text:"#546E7A",tag:"#90A4AE",cls:"chip-etc",icon:"📌"}};
 let records=[],userPos=DEFAULT_POS,recordPos=DEFAULT_POS,mainMap=null,pickMap=null,markers=[],currentFilter="전체",selectedType="",satisfaction=0,recordPhotos=[],detailRecord=null,rankTab="total";
+// 수정 모달용 상태 (개선 3)
+let editSelectedType="",editSatisfaction=0,editExistingUrls=[],editNewFiles=[];
 const get=(k,d="")=>{try{return localStorage.getItem("pl_"+k)||d}catch{return d}},set=(k,v)=>{try{localStorage.setItem("pl_"+k,v)}catch{}};
 function extractPlaceName(t){let c=t.trim();if(c.includes("] "))c=c.split("] ").slice(1).join("] ");if(c.includes(" : "))c=c.split(" : ").slice(0,-1).join(" : ");return c.trim()||t.trim();}
 async function notionFetch(path,method="GET",body=null){const opts={method,headers:{"Authorization":`Bearer ${NOTION_TOKEN}`,"Notion-Version":NOTION_VER,"Content-Type":"application/json"}};if(body)opts.body=JSON.stringify(body);const r=await fetch(`${PROXY}https://api.notion.com/${path}`,opts);if(!r.ok)throw new Error(`Notion ${r.status}`);return r.json();}
-async function loadRecords(){showLoading(true);try{const data=await notionFetch(`v1/databases/${NOTION_DB_ID}/query`,"POST",{sorts:[{timestamp:"created_time",direction:"descending"}]});records=data.results.map(page=>{const p=page.properties;const rawTitle=p["이름"]?.title?.[0]?.plain_text||"";const imgText=p["이미지URL"]?.rich_text?.[0]?.plain_text||"";const imageUrls=imgText?imgText.split(",").filter(u=>u.length>0):[];return{id:page.id,nickname:p["작성자"]?.rich_text?.[0]?.plain_text||"",pin:p["PIN"]?.rich_text?.[0]?.plain_text||"",createdAt:page.created_time||"",placeType:p["장소유형"]?.rich_text?.[0]?.plain_text||"기타",placeName:extractPlaceName(rawTitle),satisfaction:p["만족도"]?.number||0,address:p["주소"]?.rich_text?.[0]?.plain_text||"",content:p["본문"]?.rich_text?.[0]?.plain_text||"",latitude:p["위도"]?.number||0,longitude:p["경도"]?.number||0,profileImageUrl:p["프로필사진"]?.rich_text?.[0]?.plain_text||"",imageUrls};});updateMapMarkers();}catch(e){console.error("Load failed:",e);}showLoading(false);}
+
+// ===== 개선 2: 페이지네이션 적용 =====
+async function loadRecords(){
+  showLoading(true);
+  try{
+    const allPages=[];
+    let cursor=null;
+    do {
+      const body={sorts:[{timestamp:"created_time",direction:"descending"}]};
+      if(cursor) body.start_cursor=cursor;
+      const data=await notionFetch(`v1/databases/${NOTION_DB_ID}/query`,"POST",body);
+      allPages.push(...data.results);
+      cursor=data.has_more?data.next_cursor:null;
+    } while(cursor);
+
+    records=allPages.map(page=>{
+      const p=page.properties;
+      const rawTitle=p["이름"]?.title?.[0]?.plain_text||"";
+      const imgText=p["이미지URL"]?.rich_text?.[0]?.plain_text||"";
+      const imageUrls=imgText?imgText.split(",").filter(u=>u.length>0):[];
+      return{id:page.id,nickname:p["작성자"]?.rich_text?.[0]?.plain_text||"",pin:p["PIN"]?.rich_text?.[0]?.plain_text||"",createdAt:page.created_time||"",placeType:p["장소유형"]?.rich_text?.[0]?.plain_text||"기타",placeName:extractPlaceName(rawTitle),satisfaction:p["만족도"]?.number||0,address:p["주소"]?.rich_text?.[0]?.plain_text||"",content:p["본문"]?.rich_text?.[0]?.plain_text||"",latitude:p["위도"]?.number||0,longitude:p["경도"]?.number||0,profileImageUrl:p["프로필사진"]?.rich_text?.[0]?.plain_text||"",imageUrls};
+    });
+    updateMapMarkers();
+  }catch(e){console.error("Load failed:",e);}
+  showLoading(false);
+}
+
 function buildNotionProps(rec){const imgText=(rec.imageUrls||[]).join(",");return{"이름":{title:[{text:{content:`[${rec.placeType}] ${rec.placeName} : ${"★".repeat(rec.satisfaction)}`}}]},"작성자":{rich_text:[{text:{content:rec.nickname}}]},"PIN":{rich_text:[{text:{content:rec.pin}}]},"주소":{rich_text:[{text:{content:rec.address}}]},"장소유형":{rich_text:[{text:{content:rec.placeType}}]},"만족도":{number:rec.satisfaction},"위도":{number:rec.latitude},"경도":{number:rec.longitude},"본문":{rich_text:[{text:{content:rec.content||""}}]},"프로필사진":{rich_text:[{text:{content:rec.profileImageUrl||""}}]},"이미지URL":{rich_text:[{text:{content:imgText}}]}};}
 async function createNotionRecord(rec){const props=buildNotionProps(rec);const children=[];children.push({object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:`[${rec.nickname} - ${rec.createdAt}]`},annotations:{bold:true,color:"gray"}}]}});if(rec.content)children.push({object:"block",type:"paragraph",paragraph:{rich_text:[{type:"text",text:{content:rec.content}}]}});(rec.imageUrls||[]).forEach(url=>{children.push({object:"block",type:"image",image:{type:"external",external:{url}}});});return notionFetch("v1/pages","POST",{parent:{database_id:NOTION_DB_ID},properties:props,children});}
 async function updateNotionRecord(rec){return notionFetch(`v1/pages/${rec.id}`,"PATCH",{properties:buildNotionProps(rec)});}
@@ -63,12 +112,73 @@ function handleRecordPhotos(input){recordPhotos.push(...Array.from(input.files||
 function renderPhotoGrid(){const el=document.getElementById("photoGrid");el.innerHTML="";recordPhotos.forEach((f,i)=>{const div=document.createElement("div");div.className="photo-thumb";const img=document.createElement("img");img.src=URL.createObjectURL(f);const btn=document.createElement("button");btn.className="photo-remove";btn.textContent="✕";btn.onclick=()=>{recordPhotos.splice(i,1);renderPhotoGrid();};div.appendChild(img);div.appendChild(btn);el.appendChild(div);});}
 async function saveRecord(){const placeName=document.getElementById("placeNameInput").value.trim();if(!placeName)return alert("장소 이름을 입력해주세요");const fab=document.getElementById("saveFab");fab.disabled=true;fab.textContent="⏳";try{const imageUrls=[];for(const f of recordPhotos){imageUrls.push(await uploadImgur(f));}const now=new Date();const pad=n=>String(n).padStart(2,"0");const createdAt=`${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;await createNotionRecord({nickname:get("nickname"),pin:get("pin"),createdAt,placeType:selectedType||"기타",placeName,satisfaction,address:document.getElementById("recordAddress").textContent,content:document.getElementById("contentInput").value,latitude:recordPos[0],longitude:recordPos[1],imageUrls,profileImageUrl:get("profileUrl")});alert("저장되었습니다!");showScreen("main");}catch(e){alert("저장 실패: "+e.message);}fab.disabled=false;fab.textContent="💾";}
 function renderFilterBar(){const el=document.getElementById("filterBar");el.innerHTML="";["전체",...TYPES].forEach(t=>{const btn=document.createElement("button");const isAll=t==="전체";const active=currentFilter===t;btn.className=`filter-chip${active?" active":""}`;const meta=TYPE_META[t];btn.style.background=active?(isAll?"#7986CB":(meta?.bg||"#F5F5F5")):"#F5F5F5";btn.style.color=active?(isAll?"white":(meta?.text||"#636E72")):"#636E72";btn.textContent=t;btn.onclick=()=>{currentFilter=t;renderFilterBar();renderViewList();};el.appendChild(btn);});}
-function renderViewList(){const sort=document.getElementById("sortSelect").value;let list=currentFilter==="전체"?[...records]:records.filter(r=>r.placeType===currentFilter);if(sort==="latest")list.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));else if(sort==="oldest")list.sort((a,b)=>a.createdAt.localeCompare(b.createdAt));else if(sort==="satisfaction")list.sort((a,b)=>b.satisfaction-a.satisfaction);const el=document.getElementById("viewList");if(!list.length){el.innerHTML=`<div style="text-align:center;margin-top:60px;color:#B2BEC3"><div style="font-size:18px">아직 기록이 없어요</div><div style="font-size:13px;margin-top:8px">기록 버튼을 눌러 첫 기록을 남겨보세요!</div></div>`;return;}const ranking=getRanking(records);el.innerHTML=list.map(r=>{const meta=TYPE_META[r.placeType]||TYPE_META["기타"];const rank=ranking.find(x=>x.nickname===r.nickname)?.rank||0;const badge=getBadge(rank);return`<div class="record-card" onclick='showDetail("${r.id}")'><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="tag" style="background:${meta.tag}">${r.placeType}</span><span style="color:#FFD54F;font-size:13px">${"★".repeat(r.satisfaction)}</span><span style="margin-left:auto;font-size:11px;color:#B2BEC3">${r.createdAt.substring(0,10)}</span></div><div style="font-size:16px;font-weight:700;color:#2D3436;margin-bottom:4px">${r.placeName}</div><div style="font-size:12px;color:#636E72;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.address}</div>${r.content?`<div style="font-size:13px;color:#636E72;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${r.content}</div>`:""}${r.imageUrls?.[0]?`<img src="${r.imageUrls[0]}" style="width:100%;height:140px;object-fit:cover;border-radius:10px;margin-bottom:8px">`:""}
-<div style="display:flex;align-items:center;gap:6px;margin-top:4px"><div class="profile-circle" style="width:24px;height:24px">${r.profileImageUrl?`<img src="${r.profileImageUrl}">`:`<span class="profile-placeholder" style="font-size:12px">👤</span>`}</div><span style="font-size:12px;color:#636E72">${r.nickname}</span>${badge?`<span style="font-size:14px">${badge}</span>`:""}</div></div>`;}).join("");}
+function renderViewList(){const sort=document.getElementById("sortSelect").value;let list=currentFilter==="전체"?[...records]:records.filter(r=>r.placeType===currentFilter);if(sort==="latest")list.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));else if(sort==="oldest")list.sort((a,b)=>a.createdAt.localeCompare(b.createdAt));else if(sort==="satisfaction")list.sort((a,b)=>b.satisfaction-a.satisfaction);const el=document.getElementById("viewList");if(!list.length){el.innerHTML=`<div style="text-align:center;margin-top:60px;color:#B2BEC3"><div style="font-size:18px">아직 기록이 없어요</div><div style="font-size:13px;margin-top:8px">기록 버튼을 눌러 첫 기록을 남겨보세요!</div></div>`;return;}const ranking=getRanking(records);el.innerHTML=list.map(r=>{const meta=TYPE_META[r.placeType]||TYPE_META["기타"];const rank=ranking.find(x=>x.nickname===r.nickname)?.rank||0;const badge=getBadge(rank);return`<div class="record-card" onclick='showDetail("${r.id}")'><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="tag" style="background:${meta.tag}">${r.placeType}</span><span style="color:#FFD54F;font-size:13px">${"★".repeat(r.satisfaction)}</span><span style="margin-left:auto;font-size:11px;color:#B2BEC3">${r.createdAt.substring(0,10)}</span></div><div style="font-size:16px;font-weight:700;color:#2D3436;margin-bottom:4px">${r.placeName}</div><div style="font-size:12px;color:#636E72;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.address}</div>${r.content?`<div style="font-size:13px;color:#636E72;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${r.content}</div>`:""}${r.imageUrls?.[0]?`<img src="${r.imageUrls[0]}" style="width:100%;height:140px;object-fit:cover;border-radius:10px;margin-bottom:8px">`:""}<div style="display:flex;align-items:center;gap:6px;margin-top:4px"><div class="profile-circle" style="width:24px;height:24px">${r.profileImageUrl?`<img src="${r.profileImageUrl}">`:`<span class="profile-placeholder" style="font-size:12px">👤</span>`}</div><span style="font-size:12px;color:#636E72">${r.nickname}</span>${badge?`<span style="font-size:14px">${badge}</span>`:""}</div></div>`;}).join("");}
 function showDetail(id){detailRecord=records.find(r=>r.id===id);if(!detailRecord)return;showScreen("detail");document.getElementById("detailTitle").textContent=detailRecord.placeName;const r=detailRecord;const meta=TYPE_META[r.placeType]||TYPE_META["기타"];const rank=getUserRank(r.nickname);const badge=getBadge(rank);document.getElementById("detailContent").innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="tag" style="background:${meta.tag}">${r.placeType}</span><span style="color:#FFD54F;font-size:16px">${"★".repeat(r.satisfaction)}</span><span style="margin-left:auto;font-size:12px;color:#B2BEC3">${r.createdAt.substring(0,10)}</span></div><h2 style="font-size:24px;font-weight:700;color:#2D3436;margin:0 0 8px">${r.placeName}</h2><div style="font-size:13px;color:#636E72;margin-bottom:16px">📍 ${r.address}</div><div style="height:1px;background:#E8EAED;margin-bottom:16px"></div><div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><div class="profile-circle" style="width:36px;height:36px">${r.profileImageUrl?`<img src="${r.profileImageUrl}">`:`<span class="profile-placeholder" style="font-size:18px">👤</span>`}</div><span style="font-size:14px;color:#636E72">${r.nickname}</span>${badge?`<span style="font-size:16px">${badge}</span>`:""}<span style="font-size:11px;color:#B2BEC3">작성자</span></div><div style="font-size:15px;color:#2D3436;line-height:1.7;margin-bottom:16px;white-space:pre-wrap">${r.content||"본문 없음"}</div>${(r.imageUrls||[]).map(url=>`<img class="detail-image" src="${url}">`).join("")}`;}
-function handleEdit(){if(!detailRecord)return;if(detailRecord.nickname!==get("nickname")||detailRecord.pin!==get("pin"))return alert("본인의 기록만 수정할 수 있습니다.");document.getElementById("editPlaceName").value=detailRecord.placeName;document.getElementById("editContent").value=detailRecord.content;document.getElementById("editModal").classList.add("show");}
+
+// ===== 개선 3: 수정 모달 확장 (장소유형, 만족도, 이미지 추가/삭제) =====
+function handleEdit(){
+  if(!detailRecord)return;
+  if(detailRecord.nickname!==get("nickname")||detailRecord.pin!==get("pin"))return alert("본인의 기록만 수정할 수 있습니다.");
+  // 상태 초기화
+  editSelectedType=detailRecord.placeType;
+  editSatisfaction=detailRecord.satisfaction;
+  editExistingUrls=[...(detailRecord.imageUrls||[])];
+  editNewFiles=[];
+  document.getElementById("editPlaceName").value=detailRecord.placeName;
+  document.getElementById("editContent").value=detailRecord.content;
+  renderEditTypeChips();
+  setEditSatisfaction(editSatisfaction);
+  renderEditExistingPhotos();
+  document.getElementById("editNewPhotos").innerHTML="";
+  document.getElementById("editModal").classList.add("show");
+}
+function renderEditTypeChips(){
+  const el=document.getElementById("editTypeChips");el.innerHTML="";
+  TYPES.forEach(t=>{const meta=TYPE_META[t];const btn=document.createElement("button");btn.className=`chip ${meta.cls}${editSelectedType===t?" selected":""}`;btn.textContent=(editSelectedType===t?"✓ ":"")+t;btn.onclick=()=>{editSelectedType=t;renderEditTypeChips();};el.appendChild(btn);});
+}
+function setEditSatisfaction(v){
+  editSatisfaction=v;
+  document.getElementById("editSatValue").textContent=`${v} / 10`;
+  document.getElementById("editSatSlider").value=v;
+  const el=document.getElementById("editStarsContainer");el.innerHTML="";
+  for(let i=1;i<=10;i++){const s=document.createElement("span");s.className=`star ${i<=v?"filled":"empty"}`;s.textContent="★";s.onclick=()=>setEditSatisfaction(i);el.appendChild(s);}
+}
+function renderEditExistingPhotos(){
+  const el=document.getElementById("editExistingPhotos");el.innerHTML="";
+  editExistingUrls.forEach((url,i)=>{const div=document.createElement("div");div.className="photo-thumb";const img=document.createElement("img");img.src=url;const btn=document.createElement("button");btn.className="photo-remove";btn.textContent="✕";btn.onclick=()=>{editExistingUrls.splice(i,1);renderEditExistingPhotos();};div.appendChild(img);div.appendChild(btn);el.appendChild(div);});
+}
+function handleEditNewPhotos(input){
+  editNewFiles.push(...Array.from(input.files||[]));
+  renderEditNewPhotos();
+}
+function renderEditNewPhotos(){
+  const el=document.getElementById("editNewPhotos");el.innerHTML="";
+  editNewFiles.forEach((f,i)=>{const div=document.createElement("div");div.className="photo-thumb";const img=document.createElement("img");img.src=URL.createObjectURL(f);const btn=document.createElement("button");btn.className="photo-remove";btn.textContent="✕";btn.onclick=()=>{editNewFiles.splice(i,1);renderEditNewPhotos();};div.appendChild(img);div.appendChild(btn);el.appendChild(div);});
+}
 function closeEditModal(){document.getElementById("editModal").classList.remove("show");}
-async function saveEdit(){const newName=document.getElementById("editPlaceName").value.trim();const newContent=document.getElementById("editContent").value;if(!newName)return alert("장소 이름을 입력해주세요");const btn=document.getElementById("editSaveBtn");btn.disabled=true;btn.textContent="저장 중...";try{const updated={...detailRecord,placeName:newName,content:newContent};await updateNotionRecord(updated);detailRecord=updated;const idx=records.findIndex(r=>r.id===updated.id);if(idx>=0)records[idx]=updated;showDetail(updated.id);closeEditModal();alert("수정되었습니다");}catch(e){alert("수정 실패: "+e.message);}btn.disabled=false;btn.textContent="저장";}
+async function saveEdit(){
+  const newName=document.getElementById("editPlaceName").value.trim();
+  const newContent=document.getElementById("editContent").value;
+  if(!newName)return alert("장소 이름을 입력해주세요");
+  const btn=document.getElementById("editSaveBtn");
+  btn.disabled=true;btn.textContent="저장 중...";
+  try{
+    // 새 이미지 업로드
+    const uploadedUrls=[];
+    for(const f of editNewFiles){uploadedUrls.push(await uploadImgur(f));}
+    const allImageUrls=[...editExistingUrls,...uploadedUrls];
+    const updated={...detailRecord,placeName:newName,content:newContent,placeType:editSelectedType||"기타",satisfaction:editSatisfaction,imageUrls:allImageUrls};
+    await updateNotionRecord(updated);
+    detailRecord=updated;
+    const idx=records.findIndex(r=>r.id===updated.id);
+    if(idx>=0)records[idx]=updated;
+    showDetail(updated.id);
+    closeEditModal();
+    alert("수정되었습니다");
+  }catch(e){alert("수정 실패: "+e.message);}
+  btn.disabled=false;btn.textContent="저장";
+}
+
 async function handleDelete(){if(!detailRecord)return;if(detailRecord.nickname!==get("nickname")||detailRecord.pin!==get("pin"))return alert("본인의 기록만 삭제할 수 있습니다.");if(!confirm("이 기록을 삭제할까요?\n삭제된 기록은 복구할 수 없어요."))return;try{await archiveRecord(detailRecord.id);alert("삭제되었습니다");await loadRecords();showScreen("view");}catch(e){alert("삭제 실패: "+e.message);}}
 function switchRankTab(tab){rankTab=tab;document.getElementById("tabTotal").classList.toggle("active",tab==="total");document.getElementById("tabWeekly").classList.toggle("active",tab==="weekly");renderRanking();}
 function renderRanking(){const list=rankTab==="total"?getRanking(records):getRanking(records,7);const el=document.getElementById("rankList");if(!list.length){el.innerHTML=`<div style="text-align:center;margin-top:60px;color:#B2BEC3">${rankTab==="weekly"?"이번 주 기록이 없습니다":"아직 기록이 없습니다"}</div>`;return;}el.innerHTML=list.slice(0,10).map(e=>{const badge=getBadge(e.rank);const isTop=e.rank<=3;return`<div class="rank-item ${isTop?"top":"normal"} ${e.rank===1?"first":""}"><div style="width:36px;text-align:center;font-size:${isTop?22:16}px;font-weight:700;color:${isTop?"#FFD54F":"#B2BEC3"}">${badge||e.rank}</div><div class="profile-circle" style="width:40px;height:40px">${e.profileImageUrl?`<img src="${e.profileImageUrl}">`:`<span class="profile-placeholder" style="font-size:18px">👤</span>`}</div><div style="flex:1"><div style="font-weight:600;font-size:15px;color:#2D3436">${e.nickname}</div><div style="font-size:12px;color:#636E72">${e.count}개 기록</div></div></div>`;}).join("");}
